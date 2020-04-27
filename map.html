@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>map</title>
+    <style type="text/css">
+        html {
+            height: 100%
+        }
+
+        body {
+            height: 100%;
+            margin: 0px;
+            padding: 0px
+        }
+
+        #container {
+            height: 100%
+        }
+
+        /*自写css*/
+        .openwindow{
+            font-size: 12px;
+        }
+
+        #thebody{
+            position: absolute;
+            left: 140px;
+            top: 15px;
+        }
+        #inputsearch{
+            position: relative;
+            width: 280px;
+        }
+        #selectsearch{
+            position: relative;
+            right: 110px;
+            top: 37px;
+            /*right: 100px;*/
+            /*right: -1px;*/
+        }
+
+
+    </style>
+    <script type="text/javascript" src="jquery-1.8.3.min.js"></script>
+    <script type="text/javascript" src="map.load.js"></script>
+    <script type="text/javascript" src="map.plus.js"></script>
+    <script type="text/javascript" src="map.city.js"></script>
+    <script type="text/javascript" src="bmap.offline.api.v3.0.min.js"></script>
+    <!--导入坐标转换js-->
+    <!-- <script type="text/javascript" src="coordtransform.js"></script> -->
+    <!--导入点聚合JS-->
+    <!-- <script type="text/javascript" src="TextIconOverlay.min.js"></script>
+    <script type="text/javascript" src="MarkerClusterer.min.js"></script> -->
+    <!--layui-->
+    <!--<script src="layui/layui.all.js"></script>-->
+    <!--<link rel="stylesheet" href="layui/css/layui.css">-->
+    <!--导入echart-->
+    <!-- <script type="text/javascript" src="echarts.js"></script> -->
+    <link rel="stylesheet" type="text/css" href="iview/css/iview.css" >
+    <script type="text/javascript" src="iview/js/vue.min.js"></script>
+    <script type="text/javascript" src="iview/js/iview.min.js"></script>
+</head>
+<body>
+
+
+<div id="container">
+</div>
+<div id="app">
+    <div id="thebody">
+        <i-select v-model="selectsearch" style="width:110px" id="selectsearch" size="large">
+            <i-option v-for="item in selectvalue" :value="item.value" :key="item.value">{{ item.label }}</i-option>
+        </i-select>
+        <i-input search enter-button  id="inputsearch" size="large"/>
+    </div>
+</div>
+</body>
+<script>
+    new Vue({
+        el: '#app',
+        data: {
+            inputsearch:"",
+            selectsearch:"1",
+            selectvalue: [
+                {
+                    value: '1',
+                    label: '设备名称'
+                },
+                {
+                    value: '2',
+                    label: '型号'
+                },
+                {
+                    value: '3',
+                    label: '编号'
+                },
+                {
+                    value: '4',
+                    label: '属性'
+                },
+                {
+                    value: '5',
+                    label: '报警状况'
+                },
+                {
+                    value: '6',
+                    label: '使用单位'
+                },
+                {
+                    value: '7',
+                    label: '使用人'
+                }
+            ],
+        },
+        methods: {
+            show: function () {
+                this.visible = true;
+            }
+        }
+    })
+</script>
+
+<script type="text/javascript">
+    //全局URL
+    var URL="http://" + window.location.hostname + ":9000/";
+    var EARTH_RADIUS = 6378.137; //地球半径
+
+
+    var cluster;  //点聚合
+    var clustermarkers = [];  //要聚合的点
+    var circle;  //定义一个圆
+    var circlepointlong; //选中的圆中心经度
+    var circlepointlati; //选中的圆中心纬度
+    var markers = [];// 存放的点
+    var jsonMarkers = {}; // 存放点 id:marker
+    var inchooseMarkers=[];
+    //整个markers的信息
+    var userMarkers=[];
+
+    // var outputPath = 'tiles/';    //地图瓦片所在的文件夹
+    // var fromat = ".jpg";    //格式
+    /*var tileLayer = new BMap.TileLayer();
+    tileLayer.getTilesUrl = function (tileCoord, zoom) {
+        var x = tileCoord.x;
+        var y = tileCoord.y;
+        var url = outputPath + zoom + '/' + x + '/' + y + fromat;
+        return url;
+    }
+    var tileMapType = new BMap.MapType('tileMapType', tileLayer);*/
+
+    var map = new BMap.Map("container")
+
+    var point = new BMap.Point(120.299753,31.930025);  // 创建点坐标
+    map.centerAndZoom(point, 14);                 // 初始化地图，设置中心点坐标和地图级别
+    //添加地图类型控件
+    // map.addControl(new BMap.NavigationControl());  //平移缩放控件
+    map.addControl(new BMap.ScaleControl());  //比例尺
+    map.setCurrentCity("扬子石化");          // 设置地图显示的城市 此项是必须设置的
+    map.enableScrollWheelZoom(true);     //开启鼠标滚轮缩放
+    //单击获取点击的经纬度
+    //         var iconurl="http://localhost:8089/manhole-monitor/";
+
+
+    //坐标
+    var icon_landmark_red_1 = new BMap.Icon("images/markers/landmark/red/1.png", new BMap.Size(40, 50), {
+        imageSize: new BMap.Size(32, 36)
+    })
+    var icon_landmark_red_2 = new BMap.Icon("images/markers/landmark/red/2.png", new BMap.Size(40, 50), {
+        imageSize: new BMap.Size(32, 36)
+    })
+    var icon_landmark_red_3 = new BMap.Icon("images/markers/landmark/yellow/3.png", new BMap.Size(40, 50), {
+        imageSize: new BMap.Size(32, 36)
+    })
+    var icon_landmark_red_4 = new BMap.Icon("images/markers/landmark/blue/4.png", new BMap.Size(40, 50), {
+        imageSize: new BMap.Size(32, 36)
+    })
+    var icon_landmark_red_5 = new BMap.Icon("images/markers/landmark/red/5.png", new BMap.Size(40, 50), {
+        imageSize: new BMap.Size(32, 36)
+    })
+
+
+    // var icon_landmark_yellow = new BMap.Icon("images/markers/landmark/yellow/1.png", new BMap.Size(50, 60), {
+    //     imageSize: new BMap.Size(42, 46)
+    // })
+    //
+    // var icon_landmark_blue = new BMap.Icon("images/markers/landmark/blue/1.png", new BMap.Size(50, 60), {
+    //     imageSize: new BMap.Size(42, 46)
+    // })
+
+    //坐标
+    var icon_camera_red_1 = new BMap.Icon("images/markers/camera/red/1.png", new BMap.Size(40, 50), {
+        imageSize: new BMap.Size(32, 36)
+    })
+
+    var icon_camera_red_2 = new BMap.Icon("images/markers/camera/red/2.png", new BMap.Size(40, 50), {
+        imageSize: new BMap.Size(32, 36)
+    })
+    var icon_camera_red_3 = new BMap.Icon("images/markers/camera/yellow/3.png", new BMap.Size(40, 50), {
+        imageSize: new BMap.Size(32, 36)
+    })
+    var icon_camera_red_4 = new BMap.Icon("images/markers/camera/blue/4.png", new BMap.Size(40, 50), {
+        imageSize: new BMap.Size(32, 36)
+    })
+    var icon_camera_red_5 = new BMap.Icon("images/markers/camera/blue/5.png", new BMap.Size(40, 50), {
+        imageSize: new BMap.Size(32, 36)
+    })
+
+
+
+    // var icon_camera_yellow = new BMap.Icon("images/markers/camera/yellow/1.png", new BMap.Size(50, 60), {
+    //     imageSize: new BMap.Size(42, 46)
+    // })
+    // var icon_camera_blue = new BMap.Icon("images/markers/camera/blue/1.png", new BMap.Size(50, 60), {
+    //     imageSize: new BMap.Size(42, 46)
+    // })
+
+
+
+
+
+
+    // 页面启动调用
+    $(function () {
+        initList();
+        // $("#showMsg").css("max-height",windowHeight-119);
+    });
+
+
+    // 调用初始打点
+    function initList() {
+        map.clearOverlays();
+        var data=[[118.777061,32.244384],[118.781589,32.247133],[118.773612,32.251164],[118.769372,32.251164],
+            [118.763766,32.250003],[118.770306,32.245178],[118.760389,32.245484],[118.771528,32.240536],[118.758161,32.243224],
+            [118.779505,32.240536],[118.766425,32.243163],[118.763084,32.242369],[118.768833,32.245392],[118.770737,32.247591],
+            [120.299753,31.930025]]
+
+        for(let i=0;i<15;i++){
+            userMarkers.push(data[i]);
+            addMarker([data[i][0], data[i][1]],i+1,"",i+1,i+1);
+        }
+
+
+
+    }
+
+
+
+    function addMarker(position, id, name, describe, type,subtype) {
+        var pointXY = new BMap.Point(position[0], position[1]);
+        //
+        var marker;
+        switch (type) {
+            case 1:
+                marker = new BMap.Marker(pointXY, {icon: icon_landmark_red_1});
+                map.addOverlay(marker);
+                break;
+            case 2:
+                marker = new BMap.Marker(pointXY, {icon: icon_landmark_red_2});
+                map.addOverlay(marker);
+                break;
+            case 3:
+                marker = new BMap.Marker(pointXY, {icon: icon_landmark_red_3});
+                map.addOverlay(marker);
+                break;
+            case 4:
+                marker = new BMap.Marker(pointXY, {icon: icon_landmark_red_4});
+                map.addOverlay(marker);
+                break;
+            case 5:
+                marker = new BMap.Marker(pointXY, {icon: icon_landmark_red_5});
+                map.addOverlay(marker);
+                break;
+            case 6:
+                marker = new BMap.Marker(pointXY, {icon: icon_landmark_red_1});
+                map.addOverlay(marker);
+                break;
+            case 7:
+                marker = new BMap.Marker(pointXY, {icon: icon_landmark_red_1});
+                map.addOverlay(marker);
+                break;
+            case 8:
+                marker = new BMap.Marker(pointXY, {icon: icon_landmark_red_3});
+                map.addOverlay(marker);
+                break;
+            case 9:
+                marker = new BMap.Marker(pointXY, {icon: icon_landmark_red_4});
+                map.addOverlay(marker);
+                break;
+            // 摄像机
+            case 10:
+                marker = new BMap.Marker(pointXY, {icon: icon_camera_red_1});
+                map.addOverlay(marker);
+                break;
+            case 11:
+                marker = new BMap.Marker(pointXY, {icon: icon_camera_red_2});
+                map.addOverlay(marker);
+                break;
+            case 12:
+                marker = new BMap.Marker(pointXY, {icon: icon_camera_red_3});
+                map.addOverlay(marker);
+                break;
+            case 13:
+                marker = new BMap.Marker(pointXY, {icon: icon_camera_red_4});
+                map.addOverlay(marker);
+                break;
+            case 14:
+                marker = new BMap.Marker(pointXY, {icon: icon_camera_red_5});
+                map.addOverlay(marker);
+                break;
+            case 15:
+                marker = new BMap.Marker(pointXY, {icon: icon_camera_red_5});
+                map.addOverlay(marker);
+                break;
+        }
+
+        // if (type==0) {
+        //     marker = new BMap.Marker(pointXY, {icon: icon_command});
+        //     //禁止被清除
+        //     // marker.disableMassClear();
+        //     map.addOverlay(marker);
+        //     // marker = new AMap.Marker({
+        //     //     map: map,
+        //     //     position: position,
+        //     //     icon: icon_normal
+        //     // });
+        //     // normal.push(pointXY);
+        // } else if (type==1) {
+        //     marker = new BMap.Marker(pointXY, {icon: icon_repository});
+        //     marker.disableMassClear();
+        //     map.addOverlay(marker);
+        //     // marker = new AMap.Marker({
+        //     //     map: map,
+        //     //     position: position,
+        //     //     icon: icon_handle
+        //     // });
+        //     // handle.push(pointXY);
+        // } else if (type==2) {
+        //     marker = new BMap.Marker(pointXY, {icon: icon_key});
+        //     marker.disableMassClear();
+        //     map.addOverlay(marker);
+        //     // marker = new AMap.Marker({
+        //     //     map: map,
+        //     //     position: position,
+        //     //     icon: icon_build
+        //     // });
+        //     // build.push(pointXY);
+        // } else if (type==3) {
+        //     marker = new BMap.Marker(pointXY, {icon: icon_force});
+        //     marker.disableMassClear();
+        //     map.addOverlay(marker);
+
+        // }
+        // else if (type==4) {
+        //     marker = new BMap.Marker(pointXY,{icon: icon_person});
+        //    var markermore = new BMap.Marker(pointXY,{icon: icon_person});
+        //     marker.disableMassClear();
+        //     markermore.disableMassClear();
+        //     // map.addOverlay(marker);
+        //     map.addOverlay(markermore);
+        //     //加入点聚合
+        //     clustermarkers.push(marker);
+        // }
+        // else if (type==6) {
+        //     marker = new BMap.Marker(pointXY, {icon: icon_ammo});
+        //     marker.disableMassClear();
+        //     map.addOverlay(marker);
+
+        // }
+
+        // 把所有的点都存一下
+        // markers.push(gcj02tobd09);
+        // jsonMarkers[id] = marker;
+        // 给每个点放上点击事件
+        // position=gcj02tobd09;
+
+        marker.addEventListener("click", function(){
+            // console.log("有监听")
+            openWindow(id,name,describe,position,type,subtype);
+        });
+        marker.addEventListener("mouseover", function(){
+            openPage(id,name,describe,position,type,subtype);
+        });
+
+
+
+    }
+    // 信息窗体
+    var opts = {
+        width : 310,     // 信息窗口宽度
+        height: 240,     // 信息窗口高度
+    }
+
+    //鼠标悬停事件
+    function openPage(id,name,describe,position,type,subtype){
+        var content = '<div class = "openPage">';
+        content = content +
+            '<p >型&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>Lektec-Badge-01</span></p>'+ '<br>'+
+            '<p >编&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>YZSH-B-0001</span></p>'+'<br>'+
+            '<p >属&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;性：<span>自购设备</span></p>'+'<br>'+
+            '<p >报警状态：<span style="color: black">正常</span></p>'+'<br>'+
+            '<p >使用单位：<span>江阴体育中心</span></p>'+'<br>'+
+            '<p >使&nbsp;&nbsp;用&nbsp;&nbsp;人：<span>张三</span></p>';
+        content =content+
+            '</div>';
+        var infoWindow = new BMap.InfoWindow(content, opts);  // 创建信息窗口对象
+        var pointXY=new BMap.Point(position[0],position[1]);
+        map.openInfoWindow(infoWindow,pointXY);      // 打开信息窗口
+    }
+
+    // 每个点击事件都调用这个方法（点信息，点的id，点的位置信息，点的坐标）
+    function openWindow(id,name,describe,position,type,subtype){
+        //鼠标点击marker弹出自定义的信息窗体
+
+        var content = '<div class="openwindow">' ;
+
+        if(type>0&&type<10){
+            content = content +
+                '<p >设备名称：<span>电子工牌</span></p>  <br>';
+            switch (type) {
+                case 1:
+                    content = content +
+                        '<p >型&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>Lektec-Badge-01</span></p>'+ '<br>'+
+                        '<p >编&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>YZSH-B-0001</span></p>'+'<br>'+
+                        '<p >属&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;性：<span>自购设备</span></p>'+'<br>'+
+                        '<p >报警状态：<span style="color: red">报警</span></p>'+'<br>'+
+                        '<p >使用单位：<span>南京理学工程数据技术有限公司</span></p>'+'<br>'+
+                        '<p >使&nbsp;&nbsp;用&nbsp;&nbsp;人：<span>张三</span></p>';
+                    break;
+                case 2:
+                    content = content +
+                        '<p >型&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>Lektec-Badge-02</span></p>'+'<br>'+
+                        '<p >编&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>YZSH-B-0002</span></p>'+'<br>'+
+                        '<p >属&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;性：<span>内部设备</span></p>'+'<br>'+
+                        '<p >报警状态：<span style="color: red">报警</span></p>'+'<br>'+
+                        '<p >使用单位：<span>南京理学工程数据技术有限公司</span></p>'+'<br>'+
+                        '<p >使&nbsp;&nbsp;用&nbsp;&nbsp;人：<span>张三</span></p>';
+                    break;
+                case 3:
+                    content = content +
+                        '<p >型&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>Lektec-Badge-03</span></p>'+'<br>'+
+                        '<p >编&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>YZSH-B-0003</span></p>'+'<br>'+
+                        '<p >属&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;性：<span>内部设备</span></p>'+'<br>'+
+                        '<p >报警状态：<span style="color: gold">处理中</span></p>'+'<br>'+
+                        '<p >使用单位：<span>南京理学工程数据技术有限公司</span></p>'+'<br>'+
+                        '<p >使&nbsp;&nbsp;用&nbsp;&nbsp;人：<span>张三</span></p>';
+                    break;
+                case 4:
+                    content = content +
+                        '<p >型&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>Lektec-Badge-04</span></p>'+'<br>'+
+                        '<p >编&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>YZSH-B-0004</span></p>'+'<br>'+
+                        '<p >属&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;性：<span>自购设备</span></p>'+'<br>'+
+                        '<p >报警状态：<span style="color: blue">正常</span></p>'+'<br>'+
+                        '<p >使用单位：<span>南京理学工程数据技术有限公司</span></p>'+'<br>'+
+                        '<p >使&nbsp;&nbsp;用&nbsp;&nbsp;人：<span>张三</span></p>';
+                    break;
+                case 5:
+                    content = content +
+                        '<p >型&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>Lektec-Badge-05</span></p>'+'<br>'+
+                        '<p >编&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>YZSH-B-0005</span></p>'+'<br>'+
+                        '<p >属&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;性：<span>自购设备</span></p>'+'<br>'+
+                        '<p >报警状态：<span style="color: red">报警</span></p>'+'<br>'+
+                        '<p >使用单位：<span>南京理学工程数据技术有限公司</span></p>'+'<br>'+
+                        '<p >使&nbsp;&nbsp;用&nbsp;&nbsp;人：<span>张三</span></p>';
+                    break;
+                case 6:
+                    content = content +
+                        '<p >型&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>Lektec-Badge-06</span></p>'+'<br>'+
+                        '<p >编&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>YZSH-B-0006</span></p>'+'<br>'+
+                        '<p >属&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;性：<span>自购设备</span></p>'+'<br>'+
+                        '<p >报警状态：<span style="color: red">报警</span></p>'+'<br>'+
+                        '<p >使用单位：<span>南京理学工程数据技术有限公司</span></p>'+'<br>'+
+                        '<p >使&nbsp;&nbsp;用&nbsp;&nbsp;人：<span>张三</span></p>';
+                    break;
+                case 7:
+                    content = content +
+                        '<p >型&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>Lektec-Badge-07</span></p>'+'<br>'+
+                        '<p >编&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>YZSH-B-0007</span></p>'+'<br>'+
+                        '<p >属&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;性：<span>内部设备</span></p>'+'<br>'+
+                        '<p >报警状态：<span style="color: red">报警</span></p>'+'<br>'+
+                        '<p >使用单位：<span>南京理学工程数据技术有限公司</span></p>'+'<br>'+
+                        '<p >使&nbsp;&nbsp;用&nbsp;&nbsp;人：<span>张三</span></p>';
+                    break;
+                case 8:
+                    content = content +
+                        '<p >型&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>Lektec-Badge-08</span></p>'+'<br>'+
+                        '<p >编&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>YZSH-B-0008</span></p>'+'<br>'+
+                        '<p >属&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;性：<span>内部设备</span></p>'+'<br>'+
+                        '<p >报警状态：<span style="color: gold">处理中</span></p>'+'<br>'+
+                        '<p >使用单位：<span>南京理学工程数据技术有限公司</span></p>'+'<br>'+
+                        '<p >使&nbsp;&nbsp;用&nbsp;&nbsp;人：<span>张三</span></p>';
+                    break;
+                case 9:
+                    content = content +
+                        '<p >型&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>Lektec-Badge-09</span></p>'+'<br>'+
+                        '<p >编&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>YZSH-B-0009</span></p>'+'<br>'+
+                        '<p >属&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;性：<span>自购设备</span></p>'+'<br>'+
+                        '<p >报警状态：<span style="color: blue">正常</span></p>'+'<br>'+
+                        '<p >使用单位：<span>南京理学工程数据技术有限公司</span></p>'+'<br>'+
+                        '<p >使&nbsp;&nbsp;用&nbsp;&nbsp;人：<span>张三</span></p>';
+                    break;
+            }
+        }
+        else{
+            content = content +
+                '<p >设备名称：<span>移动监控</span></p> <br>';
+            switch (type) {
+                case 10:
+                    content = content +
+                        '<p >型&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>Lektec-Monitor-01</span></p>'+'<br>'+
+                        '<p >编&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>YZSH-M-0001</span></p>'+'<br>'+
+                        '<p >属&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;性：<span>内部设备</span></p>'+'<br>'+
+                        '<p >报警状态：<span style="color: red">报警</span></p>'+'<br>'+
+                        '<p >使用单位：<span>南京理学工程数据技术有限公司</span></p>'+'<br>'+
+                        '<p >使&nbsp;&nbsp;用&nbsp;&nbsp;人：<span>李四</span></p>';
+                    break;
+                case 11:
+                    content = content +
+                        '<p >型&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>Lektec-Monitor-02</span></p>'+'<br>'+
+                        '<p >编&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>YZSH-M-0002</span></p>'+'<br>'+
+                        '<p >属&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;性：<span>内部设备</span></p>'+'<br>'+
+                        '<p >报警状态：<span style="color: red">报警</span></p>'+'<br>'+
+                        '<p >使用单位：<span>南京理学工程数据技术有限公司</span></p>'+'<br>'+
+                        '<p >使&nbsp;&nbsp;用&nbsp;&nbsp;人：<span>李四</span></p>';
+                    break;
+                case 12:
+                    content = content +
+                        '<p >型&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>Lektec-Monitor-03</span></p>'+'<br>'+
+                        '<p >编&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>YZSH-M-0003</span></p>'+'<br>'+
+                        '<p >属&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;性：<span>自购设备</span></p>'+'<br>'+
+                        '<p >报警状态：<span style="color: gold">处理中</span></p>'+'<br>'+
+                        '<p >使用单位：<span>南京理学工程数据技术有限公司</span></p>'+'<br>'+
+                        '<p >使&nbsp;&nbsp;用&nbsp;&nbsp;人：<span>李四</span></p>';
+                    break;
+                case 13:
+                    content = content +
+                        '<p >型&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>Lektec-Monitor-04</span></p>'+'<br>'+
+                        '<p >编&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>YZSH-M-0004</span></p>'+'<br>'+
+                        '<p >属&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;性：<span>自购设备</span></p>'+'<br>'+
+                        '<p >报警状态：<span style="color: blue">正常</span></p>'+'<br>'+
+                        '<p >使用单位：<span>南京理学工程数据技术有限公司</span></p>'+'<br>'+
+                        '<p >使&nbsp;&nbsp;用&nbsp;&nbsp;人：<span>李四</span></p>';
+                    break;
+                case 14:
+                    content = content +
+                        '<p >型&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>Lektec-Monitor-05</span></p>'+'<br>'+
+                        '<p >编&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;号：<span>YZSH-M-0005</span></p>'+'<br>'+
+                        '<p >属&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;性：<span>自购设备</span></p>'+'<br>'+
+                        '<p >报警状态：<span style="color: blue">正常</span></p>'+'<br>'+
+                        '<p >使用单位：<span>南京理学工程数据技术有限公司</span></p>'+'<br>'+
+                        '<p >使&nbsp;&nbsp;用&nbsp;&nbsp;人：<span>李四</span></p>';
+                    break;
+                case 15:
+                    content = content +
+                        '<iframe src="index3.html"></iframe>';
+                    break;
+            }
+        }
+
+
+        content =content+
+            '</div>';
+        var infoWindow = new BMap.InfoWindow(content, opts);  // 创建信息窗口对象
+        var pointXY=new BMap.Point(position[0],position[1]);
+        // //国测局坐标转百度坐标
+        // var gcj02tobd09 = coordtransform.gcj02tobd09(position[0],position[1]);
+        // pointXY=new BMap.Point(gcj02tobd09[0],gcj02tobd09[1]);
+        map.openInfoWindow(infoWindow,pointXY);      // 打开信息窗口
+    }
+
+
+
+
+
+
+
+
+    //获得两点之间的距离
+    function getDistance(lng1, lat1, lng2, lat2) {
+        var radLat1 = rad(lat1);
+        var radLat2 = rad(lat2);
+        var a = radLat1 - radLat2;
+        var b = rad(lng1) - rad(lng2);
+        var s = 2 * Math.asin(Math.sqrt(Math.pow(Math.sin(a / 2), 2) +
+            Math.cos(radLat1) * Math.cos(radLat2) *
+            Math.pow(Math.sin(b / 2), 2)));
+        s = s * EARTH_RADIUS;
+        s = Math.round(s * 10000) / 10000;
+        return s; //返回数值单位：公里
+    };
+
+    function rad(d) {
+        return d * Math.PI / 180.0;
+    }
+
+
+</script>
+</body>
+</html>
